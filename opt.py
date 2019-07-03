@@ -66,7 +66,7 @@ class Options:
         self.parser.add_argument('--lr',             type=float,  default=1.0e-3)
         self.parser.add_argument('--lr_decay',       type=int,    default=100000, help='# steps of lr decay')
         self.parser.add_argument('--lr_gamma',       type=float,  default=0.96)
-        self.parser.add_argument('--epochs',         type=int,    default=50)
+        self.parser.add_argument('--epochs',         type=int,    default=100)
         self.parser.add_argument('--dropout',        type=float,  default=0.5, help='dropout probability, 1.0 to make no dropout')
         self.parser.add_argument('--train_batch',    type=int,    default=64)
         self.parser.add_argument('--test_batch',     type=int,    default=64)
@@ -76,7 +76,6 @@ class Options:
         self.parser.set_defaults(max_norm=True)
         self.parser.add_argument('--procrustes',     dest='procrustes', action='store_true', help='use procrustes analysis at testing')
         # self.parser.add_argument('--procrustes',     dest='procrustes', action='store_true', help='use procrustes analysis at testing')
-
 
     def _print(self):
         print("\n==================Options=================")

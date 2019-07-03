@@ -27,7 +27,7 @@ import src.utils as utils
 import src.misc as misc
 import src.log as log
 
-from src.model import LinearModel, weight_init
+from src.model import weight_init, LinearModel_Drover
 from src.datasets.human36m import Human36M
 
 
@@ -42,7 +42,7 @@ def main(opt):
 
     # create model
     print(">>> creating model")
-    model = LinearModel()
+    model = LinearModel_Drover()
     model = model.cuda()
     model.apply(weight_init)
     print(">>> total params: {:.2f}M".format(sum(p.numel() for p in model.parameters()) / 1000000.0))
@@ -176,7 +176,7 @@ def train(train_loader, model, criterion, optimizer, lr_init=None, lr_now=None, 
             lr_now = utils.lr_decay(optimizer, glob_step, lr_init, lr_decay, gamma)
 
         inputs_use = inps.data.cpu().numpy()
-        inputs_dist_norm, _ = data_process.input_norm(inputs_use) # (64, 32) , array
+        inputs_dist_norm, _ = data_process.input_norm(inputs_use, d_ref=10) # (64, 32) , array
         input_dist = torch.tensor(inputs_dist_norm, dtype=torch.float32)
 
         targets_use = tars.data.cpu().numpy()
@@ -222,7 +222,7 @@ def test(test_loader, model, criterion, procrustes=False):
 
         ### input dist norm
         data_use = inps.data.cpu().numpy()
-        data_dist_norm, data_dist_set = data_process.input_norm(data_use) # (64, 32) , array
+        data_dist_norm, data_dist_set = data_process.input_norm(data_use, d_ref=10) # (64, 32) , array
         data_dist = torch.tensor(data_dist_norm, dtype=torch.float32)
 
         # target dist norm
@@ -234,6 +234,12 @@ def test(test_loader, model, criterion, procrustes=False):
         targets = Variable(label_dist.cuda(async=True))
 
         outputs = model(inputs)
+
+        # back projection: 3d pose is defined by [xz, yz, z]
+        # outputs_xy = inputs
+        # outputs_xy[:, :16] = outputs_xy[:, :16] * outputs_z
+        # outputs_xy[:, 16:] = outputs_xy[:, 16:] * outputs_z
+        # outputs = torch.cat([outputs_xy, outputs_z], 1)
 
         # calculate loss
         pred_coord = outputs

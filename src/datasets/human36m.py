@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function, absolute_import
 
+import numpy as np
 import os
 import torch
 from torch.utils.data import Dataset
@@ -10,6 +11,52 @@ from torch.utils.data import Dataset
 TRAIN_SUBJECTS = [1, 5, 6, 7, 8]
 TEST_SUBJECTS = [9, 11]
 
+DIM_USE2 = np.array([ 0,  1,  2,  3,  4,  5,  6,  7, 12, 13, 14, 15, 16, 17, 24, 25, 26,
+       27, 30, 31, 34, 35, 36, 37, 38, 39, 50, 51, 52, 53, 54, 55],
+      dtype=np.int64)
+
+DIM_USE3 = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
+                       23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
+                       59, 75, 76, 77, 78, 79, 80, 81, 82, 83],
+                    dtype=np.int64)
+
+"""
+stat_3d.keys() =>  dict_keys(['std', 'dim_use', 'train', 'test', 'mean'])
+std => (96., )
+mean => (96.,)
+dim_use => (48, ) ?????
+train => dict{[user, action, camera_id]} ex) dict{[6, 'Walking', 'Walking 1.60457274.h5']} // data = int // len 600 = 15 actions * 8 cameras+extra_actions * 5 users
+test => same as train, user = 9, 11 // len 240
+(7,
+ 'Photo',
+ 'Photo 1.58860488.h5'): array([[514.54570615, -606.40670751, 5283.29114444],
+                                [513.19690503, -606.27874917, 5282.94296128],
+                                [511.72623278, -606.3556718, 5282.09161439],
+                                ...,
+                                [660.21544235, -494.87670603, 5111.48298849],
+                                [654.79473179, -497.67942449, 5111.05843265],
+                                [649.61962945, -498.74291164, 5111.91590807]])}
+
+"""
+
+
+# actions = ["Directions",
+#            "Discussion",
+#            "Eating",
+#            "Greeting",
+#            "Phoning",
+#            "Photo",
+#            "Posing",
+#            "Purchases",
+#            "Sitting",
+#            "SittingDown",
+#            "Smoking",
+#            "Waiting",
+#            "WalkDog",
+#            "Walking",
+#            "WalkTogether"]
+# actions = ["Photo"]
+# test
 
 class Human36M(Dataset):
     def __init__(self, actions, data_path, set_num_samples, use_hg=True, is_train=True):
@@ -42,17 +89,7 @@ class Human36M(Dataset):
         if self.is_train:
             # load train data
             self.train_3d = torch.load(os.path.join(data_path, 'train_3d.pth.tar')) ## (48,)
-            # for i in enumerate(self.train_3d.values()):
-            #     print(i[1][0])
-            #     break
-
             self.train_2d = torch.load(os.path.join(data_path, train_2d_file)) ## (32, )
-
-            # self.stat_2d = torch.load(os.path.join(data_path, stat_2d_file))
-
-            # data_std = self.stat_2d['std']
-            # data_mean = self.stat_2d['mean']
-            #
 
             for k2d in self.train_2d.keys():
 
@@ -64,8 +101,6 @@ class Human36M(Dataset):
                     num_f = self.set_num_samples
                 else:
                     num_f, _ = self.train_2d[k2d].shape
-
-
 
                 assert self.train_3d[k3d].shape[0] == self.train_2d[k2d].shape[0], '(training) 3d & 2d shape not matched'
 
@@ -114,19 +149,3 @@ class Human36M(Dataset):
         else:
             return len(self.test_inp)
 
-
-
-
-
-#
-# from opt import Options
-# import src.misc as misc
-#
-#
-# option = Options().parse()
-#
-# actions = misc.define_actions(option.action)
-#
-# Human36M(actions=actions[0], data_path=option.data_dir, use_hg=option.use_hg, is_train=False)
-#
-# print(actions)
