@@ -11,6 +11,7 @@ from tqdm import tqdm
 
 
 import numpy as np
+# for visualization, dont remove
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -30,8 +31,13 @@ import src.utils as utils
 import src.misc as misc
 import src.log as log
 
-from src.model import LinearModel, weight_init
+from src.model import LinearModel, weight_init, LinearModel_Drover
 from src.datasets.human36m import Human36M
+from src.model_GAN import Discriminator
+from joint_visualization import connect_3D_line as plot_3d
+
+
+
 
 
 def main(opt):
@@ -45,12 +51,26 @@ def main(opt):
 
     # create model
     print(">>> creating model")
-    model = LinearModel()
+    # model = LinearModel()
+    model = LinearModel_Drover()
     model = model.cuda()
     model.apply(weight_init)
+
+    # GAN discriminator model
+    discriminator = Discriminator()
+    discriminator = discriminator.cuda()
+
     print(">>> total params: {:.2f}M".format(sum(p.numel() for p in model.parameters()) / 1000000.0))
+    ## baseline loss and optim
     criterion = nn.MSELoss(reduction='mean').cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
+
+    ## GAN loss and optim
+    gan_loss =  nn.BCEWithLogitsLoss()
+    # nn.BCEWithLogitsLoss()
+    gan_optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=opt.lr)
+
+
 
     # load ckpt
     if opt.load:
@@ -80,44 +100,14 @@ def main(opt):
     # data loading
     print(">>> loading data")
     # load statistics data
-    stat_3d = torch.load(os.path.join(opt.data_dir, 'stat_3d.pth.tar'))
-    stat_2d = torch.load(os.path.join(opt.data_dir, 'stat_2d.pth.tar'))
+    # stat_3d = torch.load(os.path.join(opt.data_dir, 'stat_3d.pth.tar'))
+    # stat_2d = torch.load(os.path.join(opt.data_dir, 'stat_2d.pth.tar'))
 
-    """
-    stat_3d.keys() =>  dict_keys(['std', 'dim_use', 'train', 'test', 'mean'])
-    std => (96., )
-    mean => (96.,)
-    dim_use => (48, ) ?????
-    train => dict{[user, action, camera_id]} ex) dict{[6, 'Walking', 'Walking 1.60457274.h5']} // data = int // len 600 = 15 actions * 8 cameras+extra_actions * 5 users
-    test => same as train, user = 9, 11 // len 240
-    (7,
-     'Photo',
-     'Photo 1.58860488.h5'): array([[514.54570615, -606.40670751, 5283.29114444],
-                                    [513.19690503, -606.27874917, 5282.94296128],
-                                    [511.72623278, -606.3556718, 5282.09161439],
-                                    ...,
-                                    [660.21544235, -494.87670603, 5111.48298849],
-                                    [654.79473179, -497.67942449, 5111.05843265],
-                                    [649.61962945, -498.74291164, 5111.91590807]])}
+    # actions = ["Directions", "Discussion", "Eating", "Greeting", "Phoning", "Photo", "Posing", "Purchases",
+    # "Sitting", "SittingDown", "Smoking", "Waiting", "WalkDog", "Walking", "WalkTogether"]
 
-    """
-    # actions = ["Directions",
-    #            "Discussion",
-    #            "Eating",
-    #            "Greeting",
-    #            "Phoning",
-    #            "Photo",
-    #            "Posing",
-    #            "Purchases",
-    #            "Sitting",
-    #            "SittingDown",
-    #            "Smoking",
-    #            "Waiting",
-    #            "WalkDog",
-    #            "Walking",
-    #            "WalkTogether"]
-    # actions = ["Photo"]
     # test
+    # actions = ["Directions"]
     if opt.test:
         err_set = []
         for action in actions:
@@ -130,10 +120,12 @@ def main(opt):
                 num_workers=opt.job,
                 pin_memory=True)
 
-            _, err_test = test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=opt.procrustes)
+            _, err_test = test(test_loader, model, criterion, procrustes=opt.procrustes)
             err_set.append(err_test)
 
         print (">>>>>> TEST results:")
+
+
 
         for action in actions:
             print ("{}".format(action), end='\t')
@@ -170,11 +162,12 @@ def main(opt):
         ## per epoch
         # train
         glob_step, lr_now, loss_train = train(
-            train_loader, model, criterion, optimizer, stat_2d, stat_3d,
+            train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, discriminator,
             lr_init=opt.lr, lr_now=lr_now, glob_step=glob_step, lr_decay=opt.lr_decay, gamma=opt.lr_gamma,
             max_norm=opt.max_norm)
+
         # test
-        loss_test, err_test = test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=opt.procrustes)
+        loss_test, err_test = test(test_loader, model, criterion, procrustes=opt.procrustes)
         # loss_test, err_test = test(test_loader, model, criterion, stat_3d, procrustes=True)
 
         # update log file
@@ -207,19 +200,18 @@ def main(opt):
     logger.close()
 
 
-def train(train_loader, model, criterion, optimizer, stat_2d, stat_3d,
+def train(train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, discriminator,
           lr_init=None, lr_now=None, glob_step=None, lr_decay=None, gamma=None,
           max_norm=True ):
 
     losses = utils.AverageMeter()
+    D_losses = utils.AverageMeter()
+
 
     model.train()
 
-    # start = time.time()
-    # batch_time = 0
-    # bar = Bar('>>>', fill='>', max=len(train_loader))
 
-    # for i, (inps, tars) in enumerate(train_loader): # inps = (64, 32)
+    # for i, (inps, tars) in enumerate(train_loader): # inps = (64, 32) // original version
     pbar = tqdm(train_loader)
     for i, (inps, tars) in enumerate(pbar): # inps = (64, 32)
         glob_step += 1
@@ -227,31 +219,31 @@ def train(train_loader, model, criterion, optimizer, stat_2d, stat_3d,
             lr_now = utils.lr_decay(optimizer, glob_step, lr_init, lr_decay, gamma)
 
         ### Input unnormalization
-        inputs_unnorm = data_process.unNormalizeData(inps.data.cpu().numpy(), stat_2d['mean'], stat_2d['std'], stat_2d['dim_use']) # 64, 64
-        # unnorm size = 64, make zeros mtrx and just do unnorm, so (0 * stdMat) + meanMat => 64, 64 // junk values the other position except original 16 joints
-        dim_2d_use = stat_2d['dim_use']
+        # inputs_unnorm = data_process.unNormalizeData(inps.data.cpu().numpy(), stat_2d['mean'], stat_2d['std'], stat_2d['dim_use']) # 64, 64
+        # dim_2d_use = stat_2d['dim_use']
         # select useful 32 joint using dim_2d-use  => 64, 32
-        inputs_use = inputs_unnorm[:, dim_2d_use]  # (64, 32)
+        # inputs_use = inputs_unnorm[:, dim_2d_use]  # (64, 32)
         ### Input distance normalization
-        inputs_dist_norm, _ = data_process.input_norm(inputs_use) # (64, 32) , array
-        input_dist = torch.tensor(inputs_dist_norm, dtype=torch.float32)
+        inputs_dist_norm, _ = data_process.input_norm(inps.data.cpu().numpy()) # (64, 32) , array
+        inputs_dist = torch.tensor(inputs_dist_norm, dtype=torch.float32)
 
         ### Targets unnormalization
-        targets_unnorm = data_process.unNormalizeData(tars.data.cpu().numpy(), stat_3d['mean'], stat_3d['std'], stat_3d['dim_use']) # (64, 96)
-        dim_3d_use = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
-                               23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
-                               59, 75, 76, 77, 78, 79, 80, 81, 82, 83])
-        targets_use = targets_unnorm[:, dim_3d_use] # (51, )
+        # targets_unnorm = data_process.unNormalizeData(tars.data.cpu().numpy(), stat_3d['mean'], stat_3d['std'], stat_3d['dim_use']) # (64, 96)
+        # dim_3d_use = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
+        #                        23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
+        #                        59, 75, 76, 77, 78, 79, 80, 81, 82, 83])
+        # targets_use = targets_unnorm[:, dim_3d_use] # (51, )
         ### Targets distance normalization
-        targets_dist_norm, _  = data_process.output_norm(targets_use)
+        targets_dist_norm, _  = data_process.output_norm(tars.data.cpu().numpy())
         targets_dist = torch.tensor(targets_dist_norm, dtype=torch.float32)
 
-        inputs = Variable(input_dist.cuda())
+        inputs = Variable(inputs_dist.cuda())
         targets = Variable(targets_dist.cuda(async=True))
 
+        ## baseline output
         outputs = model(inputs)
 
-        # calculate loss
+        # Baseline calculate loss
         optimizer.zero_grad()
         loss = criterion(outputs, targets)
         losses.update(loss.item(), inputs.size(0))
@@ -262,7 +254,28 @@ def train(train_loader, model, criterion, optimizer, stat_2d, stat_3d,
         optimizer.step()
 
         # tqdm.set_postfix(loss='{:05.6f}'.format(losses.avg))
-        pbar.set_postfix(tr_loss='{:05.6f}'.format(losses.avg))
+        # pbar.set_postfix(tr_loss='{:05.6f}'.format(losses.avg))
+
+
+        ### GAN
+        ## make GAN label
+        Tensor = torch.cuda.FloatTensor
+        valid = Variable(Tensor(inps.size(0), 1).fill_(1.0), requires_grad=False)
+        fake = Variable(Tensor(inps.size(0), 1).fill_(0.0), requires_grad=False)
+
+        ## Warning !!!! This fake_joint is temporary input setting, after finish random rotation, inputs should be change to rotation_inputs
+        fake_joint = inputs  ## inputs => rotation_inputs
+
+        ## GAN train
+        gan_optimizer_D.zero_grad()
+        real_loss = gan_loss(discriminator(inputs), valid)
+        fake_loss = gan_loss(discriminator(fake_joint.detach()), fake)
+
+        d_loss = (real_loss + fake_loss) / 2
+        d_loss.backward()
+        gan_optimizer_D.step()
+
+        pbar.set_postfix(tr_loss='{:05.6f}'.format(losses.avg), d_loss='{:05.6f}'.format(D_losses.avg))
 
 
     #     # update summary
@@ -285,7 +298,7 @@ def train(train_loader, model, criterion, optimizer, stat_2d, stat_3d,
 
 # def test(test_loader, model, criterion, stat2d, stat_3d, procrustes=False):
 
-def test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=False):
+def test(test_loader, model, criterion, procrustes=False):
 
     losses = utils.AverageMeter()
 
@@ -302,26 +315,24 @@ def test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=False):
     for i, (inps, tars) in enumerate(pbar):
 
         ### input unnorm
-        data_coord = data_process.unNormalizeData(inps.data.cpu().numpy(), stat_2d['mean'], stat_2d['std'], stat_2d['dim_use']) # 64, 64
-        dim_2d_use = stat_2d['dim_use']
-        data_use = data_coord[:, dim_2d_use]  # (64, 32)
+        # data_coord = data_process.unNormalizeData(inps.data.cpu().numpy(), stat_2d['mean'], stat_2d['std'], stat_2d['dim_use']) # 64, 64
+        # dim_2d_use = stat_2d['dim_use']
+        # data_use = data_coord[:, dim_2d_use]  # (64, 32)
 
         ### input dist norm
-        data_dist_norm, data_dist_set = data_process.input_norm(data_use) # (64, 32) , array
+        data_dist_norm, data_dist_set = data_process.input_norm(inps.data.cpu().numpy()) # (64, 32) , array
         data_dist = torch.tensor(data_dist_norm, dtype=torch.float32)
 
         # target unnorm
-        label_coord = data_process.unNormalizeData(tars.data.cpu().numpy(), stat_3d['mean'], stat_3d['std'], stat_3d['dim_use']) # (64, 96)
-        dim_3d_use = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
-                               23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
-                               59, 75, 76, 77, 78, 79, 80, 81, 82, 83])
+        # label_coord = data_process.unNormalizeData(tars.data.cpu().numpy(), stat_3d['mean'], stat_3d['std'], stat_3d['dim_use']) # (64, 96)
+        # dim_3d_use = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
+        #                        23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
+        #                        59, 75, 76, 77, 78, 79, 80, 81, 82, 83])
 
-        label_use = label_coord[:, dim_3d_use]  # (48, )
+        # label_use = label_coord[:, dim_3d_use]  # (48, )
         # target dist norm
-        label_dist_norm, label_dist_set = data_process.output_norm(label_use)
+        label_dist_norm, label_dist_set = data_process.output_norm(tars.data.cpu().numpy())
         label_dist = torch.tensor(label_dist_norm, dtype=torch.float32)
-
-
 
         inputs = Variable(data_dist.cuda())
         targets = Variable(label_dist.cuda(async=True))
@@ -334,8 +345,8 @@ def test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=False):
 
         losses.update(loss.item(), inputs.size(0))
 
-        tars = targets
-        pred = outputs
+        # tars = targets
+        # pred = outputs
 
         # inputs_dist_set = np.reshape(targets_dist_set, (-1, 1))
         # inputs_dist_set = np.repeat(targets_dist_set, 48, axis=1)
@@ -350,9 +361,13 @@ def test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=False):
         # c_set = np.repeat(np.asarray([0,0,10]), 16, axis=0)
 
         #### undist -> unnorm
-        outputs_undist = (pred.data.cpu().numpy() * targets_dist_set) - c
+        # outputs_undist = (outputs.data.cpu().numpy() * targets_dist_set) -c
+        outputs_undist = (outputs.data.cpu().numpy() * targets_dist_set)
+
         # outputs_undist = outputs_undist - c
-        targets_undist =  ( tars.data.cpu().numpy() * targets_dist_set ) - c
+        # targets_undist =  ( targets.data.cpu().numpy() * targets_dist_set ) - c
+        targets_undist =  ( targets.data.cpu().numpy() * targets_dist_set )
+
         # targets_undist = targets_undist - c
 
 
@@ -391,6 +406,10 @@ def test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=False):
 
         outputs_use = outputs_undist
         targets_use = targets_undist# (64, 48)
+
+        # if i == 300:
+        #     plot_3d(outputs_use, targets_use,  20)
+        #     break
 
         # inputs_use = inputs_unnorm[:, dim_2d_use] # (64, 32)
 
@@ -431,6 +450,12 @@ def test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=False):
 
         pbar.set_postfix(tt_loss='{:05.6f}'.format(losses.avg))
 
+        # ### visualization
+        # if i == 500:
+        #     simple_3d_line(outputs_use, 10)
+        #     simple_3d_line(targets_use, 10)
+        #     break
+
 
     all_dist = np.vstack(all_dist)
     joint_err = np.mean(all_dist, axis=0)
@@ -442,13 +467,14 @@ def test(test_loader, model, criterion, stat_2d, stat_3d, procrustes=False):
 
 if __name__ == "__main__":
     option = Options().parse()
-    option.set_num_samples = -1
-    option.procrustes = False
+    option.set_num_samples = 10
+    option.procrustes = True
     option.test = False
-    option.resume = False # If you want to resume train from previous ckpt then set as True. Also, have to set option.load file path
+    option.resume = False
+    # If you want to resume train from previous ckpt then set as True. Also, have to set option.load file path to as your ckpt file path.
     # option.load = 'D:\\Workspace\\3d_pose_baseline_pytorch-master\\3d_pose_baseline_pytorch-master\\checkpoint\\test\\ckpt_best.pth.tar' # file_path where ckpt files are in
-    option.load = '' # file_path where ckpt files are in
-
+    # option.load = 'C:\\Users\\DamonChang\\Desktop\\Simple Result\\dist_norm ckpt wo zscore_norm\\checkpoint\\test\\ckpt_best.pth.tar' # file_path where ckpt files are in
+    option.load = ''
 
     main(option)
     # print(main)

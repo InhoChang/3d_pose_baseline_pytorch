@@ -20,9 +20,9 @@ def connect_2D_line(inputs_use, sample_num):
   plt.gca().invert_yaxis()
 
 
-def simple_3d_line(tars):
+def simple_3d_line(tars, idx):
 
-  sample_joint = np.reshape(np.asarray(tars[0]), (16, 3))
+  sample_joint = np.reshape(np.asarray(tars[idx]), (16, 3))
 
   start_points = np.array([6, 5, 4, 0, 1, 2, 0, 7, 8,  10, 11,  8,  13, 14,  8 ])  # start points
   end_points = np.array([  5, 4, 0, 1, 2, 3, 7, 8, 10, 11, 12, 13,  14, 15, 9 ])  # end points
@@ -56,8 +56,11 @@ def connect_3D_line(outputs_use, targets_use, sample_num):
   # start_points = np.array([6, 2, 1, 6, 3, 4, 6, 7, 8, 8, 13, 14, 8, 12, 11])  # start points
   # end_points = np.array([2, 1, 0, 3, 4, 5, 7, 8, 9, 13, 14, 15, 12, 11, 10])  # end points
 
-  start_points = np.array([6, 5, 4, 0, 1, 2, 0, 7, 8, 11, 12,     8, 14, 15, 8, 9])  # start points
-  end_points = np.array(  [5, 4, 0, 1, 2, 3, 7, 8, 11, 12, 13,   14, 15, 16, 9, 10])  # end points
+  # start_points = np.array([6, 5, 4, 0, 1, 2, 0, 7, 8, 11, 12,     8, 14, 15, 8, 9])  # start points
+  # end_points = np.array(  [5, 4, 0, 1, 2, 3, 7, 8, 11, 12, 13,   14, 15, 16, 9, 10])  # end points
+
+  start_points = np.array([6, 5, 4, 0, 1, 2, 0, 7, 8,  10, 11,  8,  13, 14,  8 ])  # start points
+  end_points = np.array([  5, 4, 0, 1, 2, 3, 7, 8, 10, 11, 12, 13,  14, 15, 9 ])  # end points
 
   # prediction list
   x_coord_p, y_coord_p, z_coord_p = [], [], []
@@ -67,8 +70,8 @@ def connect_3D_line(outputs_use, targets_use, sample_num):
   x_coord_l, y_coord_l, z_coord_l = [], [], []
   x_coord_sub_l, y_coord_sub_l, z_coord_sub_l = [], [], []
 
-  pred = np.reshape(outputs_use[sample_num], (17,3))
-  lb =  np.reshape(targets_use[sample_num], (17,3))
+  pred = np.reshape(outputs_use[sample_num], (16,3))
+  lb =  np.reshape(targets_use[sample_num], (16,3))
 
 
   fig = plt.figure()

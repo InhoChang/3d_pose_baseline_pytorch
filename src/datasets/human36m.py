@@ -4,11 +4,21 @@ from __future__ import print_function, absolute_import
 
 import os
 import torch
+import numpy as np
 from torch.utils.data import Dataset
 
 
 TRAIN_SUBJECTS = [1, 5, 6, 7, 8]
 TEST_SUBJECTS = [9, 11]
+
+# dim_2d_use = np.array([ 0,  1,  2,  3,  4,  5,  6,  7, 12, 13, 14, 15, 16, 17, 24, 25, 26,
+#        27, 30, 31, 34, 35, 36, 37, 38, 39, 50, 51, 52, 53, 54, 55])
+#
+# dim_2d_use = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
+#                                23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
+#                                59, 75, 76, 77, 78, 79, 80, 81, 82, 83])
+
+
 
 
 class Human36M(Dataset):
@@ -29,6 +39,15 @@ class Human36M(Dataset):
 
         self.train_inp, self.train_out, self.test_inp, self.test_out = [], [], [], []
         self.train_meta, self.test_meta = [], []
+
+        self.dim_2d_use = [ 0,  1,  2,  3,  4,  5,  6,  7, 12, 13, 14, 15, 16, 17, 24, 25, 26,
+       27, 30, 31, 34, 35, 36, 37, 38, 39, 50, 51, 52, 53, 54, 55]
+
+        self.dim_3d_use = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
+                               23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
+                               59, 75, 76, 77, 78, 79, 80, 81, 82, 83]
+
+
 
         # loading data
         if self.use_hg:
