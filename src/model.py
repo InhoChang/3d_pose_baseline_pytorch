@@ -93,7 +93,7 @@ class LinearModel(nn.Module):
 class LinearModel_Drover(nn.Module):
     def __init__(self,
                  linear_size=1024,
-                 num_stage=2,
+                 num_stage=4,
                  p_dropout=0.5,
                  num_joint=16):
 
