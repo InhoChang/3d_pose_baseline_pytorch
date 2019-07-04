@@ -168,6 +168,7 @@ def train(train_loader, model, criterion, optimizer, lr_init=None, lr_now=None, 
     losses = utils.AverageMeter()
 
     model.train()
+    model_eval = model.eval()
 
     pbar = tqdm(train_loader)
     for i, (inps, tars) in enumerate(pbar): # inps = (64, 32)
@@ -186,60 +187,64 @@ def train(train_loader, model, criterion, optimizer, lr_init=None, lr_now=None, 
         inputs = Variable(input_dist.cuda())
         targets = Variable(targets_dist.cuda(async=True))
 
-        pred3d = model(inputs) # prediction 3d pose [batchsize, num joint * 3]
+        X = model(inputs) # prediction 3d pose [batchsize, num joint * 3]
 
         # random projection
-        random_azimu_angle = np.random.uniform(-math.pi, math.pi, pred3d.size(0))
-        random_elev_angle = np.random.uniform(-math.pi/9, math.pi/9, pred3d.size(0))
-        random_rot = torch.zeros(pred3d.size(0), 3, 3)
-        for k in range(pred3d.size(0)):
-            Az = torch.zeros([3, 3])
-            Az[0, 0] = 1
-            Az[1, 1] = math.cos(random_azimu_angle[k])
-            Az[1, 2] = -math.sin(random_azimu_angle[k])
-            Az[2, 1] = math.sin(random_azimu_angle[k])
-            Az[2, 2] = math.cos(random_azimu_angle[k])
+        az_angle = np.random.uniform(-math.pi, math.pi, X.size(0))
+        el_angle = np.random.uniform(-math.pi/9, math.pi/9, X.size(0))
+        R = torch.zeros(X.size(0), 3, 3)
+        R_inv = torch.zeros(X.size(0), 3, 3)
+        for k in range(X.size(0)):
+            # Theta = math.acos(math.cos(el_angle[k]) * math.cos(az_angle[k]))
+            # Phi = math.atan(math.tan(el_angle[k]) / math.sin(az_angle[k]))
+            Theta = el_angle[k]
+            Phi = az_angle[k]
+            Rx = torch.zeros([3, 3])
+            Rx[0, 0] = 1
+            Rx[1, 1] = math.cos(Phi)
+            Rx[1, 2] = -math.sin(Phi)
+            Rx[2, 1] = math.sin(Phi)
+            Rx[2, 2] = math.cos(Phi)
 
-            El = torch.zeros([3, 3])
-            El[1, 1] = 1
-            El[0, 0] = math.cos(random_elev_angle[k])
-            El[0, 2] = math.sin(random_elev_angle[k])
-            El[2, 0] = -math.sin(random_elev_angle[k])
-            El[2, 2] = math.cos(random_elev_angle[k])
+            Ry = torch.zeros([3, 3])
+            Ry[1, 1] = 1
+            Ry[0, 0] = math.cos(Theta)
+            Ry[0, 2] = math.sin(Theta)
+            Ry[2, 0] = -math.sin(Theta)
+            Ry[2, 2] = math.cos(Theta)
 
-            random_rot[k, :, :] = np.multiply(Az, El)
+            R[k, :, :] = torch.matmul(Ry, Rx)
+            R_inv[k, :, :] = torch.inverse(R[k, :, :])
 
-        pred3d_reshape = pred3d.reshape((-1, 16, 3))
-        pred3d_origin = pred3d_reshape - pred3d_reshape[:, 0, :].reshape((-1, 1, 3))
-        ref_translation = torch.zeros((pred3d_origin.size(0), pred3d_origin.size(1), pred3d_origin.size(2)))
-        ref_translation[:,:,2] = 10
+        X_reshape = X.reshape((-1, 16, 3)).permute((0, 2, 1)) # N by 3 by num_joint
+        Xr = X_reshape[:, :, 0].reshape((-1, 3, 1))
+        T = torch.zeros((X_reshape.size(0), X_reshape.size(1), X_reshape.size(2)))
+        T[:, 2, :] = 10
 
-        pred3d_transform = torch.matmul(random_rot.cuda(), pred3d_origin.permute((0, 2, 1))).permute((0,2,1)) + ref_translation.cuda()
-        pred3d_transform_reshape = pred3d_transform.reshape(-1, 16 * 3)
+        Y = torch.matmul(R.cuda(), X_reshape - Xr) + T.cuda()
+        Y_reshape = Y.permute((0, 2, 1)).reshape(-1, 16 * 3) # N by num_joint * 3
+        y = (Y[:, :2, :] / Y[:, 2, :].reshape(-1, 1, 16)).permute((0, 2, 1)).reshape((-1, 16 * 2))
+        Y_tilde = model_eval(y) # prediction 3d pose [batchsize, num joint * 3]
 
-        reprojection_joint = pred3d_transform[:, :, :2] / pred3d_transform[:, :, 2].reshape(-1, 16, 1)
-        inputs_repro = reprojection_joint.reshape((-1, 16 * 2))
-        pred3d_random = model(inputs_repro) # prediction 3d pose [batchsize, num joint * 3]
 
         # inverse projection
-        pred3d_random_reshape = pred3d_random.reshape((-1, 16, 3))
-        pred3d_random_origin = pred3d_random_reshape - pred3d_random_reshape[:, 0, :].reshape((-1, 1, 3))
-        random_rot_transpose = random_rot.permute((0, 2, 1))
-        pred3d_random_invtransform = torch.matmul(random_rot_transpose.cuda(), pred3d_random_origin.permute((0, 2, 1))).permute(
-            (0, 2, 1)) + ref_translation.cuda()
-        random_reprojection_joint = pred3d_random_invtransform[:, :, :2] / pred3d_random_invtransform[:, :, 2].reshape(-1, 16, 1)
-        random_reprojection_joint_final = random_reprojection_joint.reshape((-1, 16 * 2))
+        Y_tilde_reshape = Y_tilde.reshape((-1, 16, 3)).permute((0, 2, 1)) # N by 3 by num_joint
+        X_tilde = torch.matmul(R_inv.cuda(), Y_tilde_reshape - T.cuda()) + Xr
+        x_tilde = (X_tilde[:, :2, :] / X_tilde[:, 2, :].reshape(-1, 1, 16)).permute((0, 2, 1)).reshape((-1, 16 * 2))
 
         # calculate loss
         optimizer.zero_grad()
 
-        loss2d = criterion(inputs, random_reprojection_joint_final)
-        loss3d = criterion(pred3d_transform_reshape, pred3d_random)
-
-        loss = loss3d + loss2d
-
-        losses.update(loss.item(), inputs.size(0))
+        loss2d = criterion(inputs, x_tilde)
+        loss3d = criterion(Y_tilde, Y_reshape)
+        loss = 0.001 * loss3d + 10 * loss2d
+        # loss3d1 = criterion(X, targets)
+        # loss3d2 = criterion(X_tilde.permute((0, 2, 1)).reshape((-1, 16 * 3)), targets)
+        # loss = 0.5 * loss3d1 + 0.5 * loss3d2
         loss.backward()
+
+        loss_temp = criterion(targets, X)
+        losses.update(loss_temp.item(), inputs.size(0))
 
         if max_norm:
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)

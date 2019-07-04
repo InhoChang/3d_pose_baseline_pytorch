@@ -132,12 +132,11 @@ class LinearModel_Drover(nn.Module):
         y = self.batch_norm1(y)
         y = self.relu(y)
         y = self.dropout(y)
-
         # linear layers
         for i in range(self.num_stage):
             y = self.linear_stages[i](y)
-
         y = self.w2(y)
+
         ymin = torch.zeros([y.size(0), y.size(1)])
         z = torch.max(y + d_ref, ymin.cuda()) + 1
 
