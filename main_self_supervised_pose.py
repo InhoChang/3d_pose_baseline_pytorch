@@ -195,10 +195,10 @@ def train(train_loader, model, criterion, optimizer, lr_init=None, lr_now=None, 
         R = torch.zeros(X.size(0), 3, 3)
         R_inv = torch.zeros(X.size(0), 3, 3)
         for k in range(X.size(0)):
-            # Theta = math.acos(math.cos(el_angle[k]) * math.cos(az_angle[k]))
-            # Phi = math.atan(math.tan(el_angle[k]) / math.sin(az_angle[k]))
-            Theta = el_angle[k]
-            Phi = az_angle[k]
+            Theta = math.acos(math.cos(el_angle[k]) * math.cos(az_angle[k]))
+            Phi = math.atan(math.tan(el_angle[k]) / math.sin(az_angle[k]))
+            # Theta = el_angle[k]
+            # Phi = az_angle[k]
             Rx = torch.zeros([3, 3])
             Rx[0, 0] = 1
             Rx[1, 1] = math.cos(Phi)
@@ -225,7 +225,6 @@ def train(train_loader, model, criterion, optimizer, lr_init=None, lr_now=None, 
         Y_reshape = Y.permute((0, 2, 1)).reshape(-1, 16 * 3) # N by num_joint * 3
         y = (Y[:, :2, :] / Y[:, 2, :].reshape(-1, 1, 16)).permute((0, 2, 1)).reshape((-1, 16 * 2))
         Y_tilde = model_eval(y) # prediction 3d pose [batchsize, num joint * 3]
-
 
         # inverse projection
         Y_tilde_reshape = Y_tilde.reshape((-1, 16, 3)).permute((0, 2, 1)) # N by 3 by num_joint

@@ -30,12 +30,12 @@ class Linear(nn.Module):
         y = self.w1(x)
         y = self.batch_norm1(y)
         y = self.relu(y)
-        y = self.dropout(y)
+        # y = self.dropout(y)
 
         y = self.w2(y)
         y = self.batch_norm2(y)
         y = self.relu(y)
-        y = self.dropout(y)
+        # y = self.dropout(y)
 
         out = x + y
 
@@ -131,7 +131,7 @@ class LinearModel_Drover(nn.Module):
         y = self.w1(x)
         y = self.batch_norm1(y)
         y = self.relu(y)
-        y = self.dropout(y)
+        # y = self.dropout(y)
         # linear layers
         for i in range(self.num_stage):
             y = self.linear_stages[i](y)
