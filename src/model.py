@@ -152,8 +152,6 @@ class LinearModel_Drover(nn.Module):
         return out
 
 
-
-
 class Discriminator(nn.Module):
     def __init__(self, linear_size = 1024, num_stage = 3, p_dropout=0.5):
         super(Discriminator, self).__init__()

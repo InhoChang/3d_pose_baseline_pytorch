@@ -29,6 +29,7 @@ import src.log as log
 
 from src.model import weight_init, LinearModel_Drover, Discriminator
 from src.datasets.human36m import Human36M
+import src.spherical_coords as spherical_coords
 
 
 def main(opt):
@@ -41,18 +42,16 @@ def main(opt):
     log.save_options(opt, opt.ckpt)
 
     # create model
-    print(">>>creating base-line model")
+    print(">>> creating model")
     model = LinearModel_Drover()
     model = model.cuda()
     model.apply(weight_init)
 
-    print(">>>creating gan model")
+    ## GAN discriminator model
     discriminator = Discriminator()
     discriminator = discriminator.cuda()
 
-
     print(">>> total params: {:.2f}M".format(sum(p.numel() for p in model.parameters()) / 1000000.0))
-    ## baseline loss and optim
     criterion = nn.MSELoss(reduction='mean').cuda()
     optimizer = torch.optim.Adam(model.parameters(), lr=opt.lr)
 
@@ -136,13 +135,10 @@ def main(opt):
 
         ## per epoch
         # train
-        glob_step, lr_now, loss_train, loss_d  = train( train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, discriminator,
+        glob_step, lr_now, loss_train, loss_d = train(
+            train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, discriminator,
             lr_init=opt.lr, lr_now=lr_now, glob_step=glob_step, lr_decay=opt.lr_decay, gamma=opt.lr_gamma,
             max_norm=opt.max_norm)
-        # glob_step, lr_now, loss_train = train(
-        #     train_loader, model, criterion, optimizer,  lr_init=opt.lr, lr_now=lr_now,
-        #     glob_step=glob_step, lr_decay=opt.lr_decay, gamma=opt.lr_gamma,
-        #     max_norm=opt.max_norm)
         # test
         loss_test, err_test = test(test_loader, model, criterion, procrustes=opt.procrustes)
 
@@ -176,18 +172,17 @@ def main(opt):
     logger.close()
 
 
-# def train(train_loader, model, criterion, optimizer, lr_init=None, lr_now=None, glob_step=None, lr_decay=None,
-#           gamma=None, max_norm=True ):
-
-def train(train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, discriminator, lr_init=None,
-          lr_now=None, glob_step=None, lr_decay=None,
-          gamma=None, max_norm=True):
+def train(train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, discriminator,
+          lr_init=None, lr_now=None, glob_step=None, lr_decay=None, gamma=None,
+          max_norm=True ):
 
     losses = utils.AverageMeter()
     D_losses = utils.AverageMeter()
 
     model.train()
     model_eval = model.eval()
+
+    discriminator.train()
 
     pbar = tqdm(train_loader)
     for i, (inps, tars) in enumerate(pbar): # inps = (64, 32)
@@ -213,12 +208,12 @@ def train(train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, 
         el_angle = np.random.uniform(-math.pi/9, math.pi/9, X.size(0))
         R = torch.zeros(X.size(0), 3, 3)
         R_inv = torch.zeros(X.size(0), 3, 3)
-
         for k in range(X.size(0)):
+            [Theta, Phi] = spherical_coords.azel_to_thetaphi(az_angle[k], el_angle[k])
             # Theta = math.acos(math.cos(el_angle[k]) * math.cos(az_angle[k]))
             # Phi = math.atan(math.tan(el_angle[k]) / math.sin(az_angle[k]))
-            Theta = el_angle[k]
-            Phi = az_angle[k]
+            # Theta = el_angle[k]
+            # Phi = az_angle[k]
             Rx = torch.zeros([3, 3])
             Rx[0, 0] = 1
             Rx[1, 1] = math.cos(Phi)
@@ -246,30 +241,6 @@ def train(train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, 
         y = (Y[:, :2, :] / Y[:, 2, :].reshape(-1, 1, 16)).permute((0, 2, 1)).reshape((-1, 16 * 2))
         Y_tilde = model_eval(y) # prediction 3d pose [batchsize, num joint * 3]
 
-
-        ### GAN
-        ## make GAN label
-        Tensor = torch.cuda.FloatTensor
-        valid = Variable(Tensor(inps.size(0), 1).fill_(1.0), requires_grad=False)
-        fake = Variable(Tensor(inps.size(0), 1).fill_(0.0), requires_grad=False)
-
-        real_lb = torch.cat((valid, fake), 1)
-        fake_lb = torch.cat((fake, valid), 1)
-
-        ## GAN train
-        gan_optimizer_D.zero_grad()
-        real_loss = gan_loss(discriminator(inputs), real_lb)
-        fake_loss = gan_loss(discriminator(y), fake_lb)
-
-        # .detach()
-        d_loss = (real_loss + fake_loss) / 2
-        d_loss.backward()
-        D_losses.update(d_loss.item(), inputs.size(0))
-
-        gan_optimizer_D.step()
-
-
-
         # inverse projection
         Y_tilde_reshape = Y_tilde.reshape((-1, 16, 3)).permute((0, 2, 1)) # N by 3 by num_joint
         X_tilde = torch.matmul(R_inv.cuda(), Y_tilde_reshape - T.cuda()) + Xr
@@ -293,11 +264,35 @@ def train(train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, 
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1)
         optimizer.step()
 
-        pbar.set_postfix(tr_loss='{:05.6f}'.format(losses.avg))
+
+        if i % 3 == 0:
+            ### GAN
+            ## make GAN label
+            Tensor = torch.cuda.FloatTensor
+            valid = Variable(Tensor(inps.size(0), 1).fill_(1.0), requires_grad=False)
+            fake = Variable(Tensor(inps.size(0), 1).fill_(0.0), requires_grad=False)
+
+            real_lb = torch.cat((valid, fake), 1)
+            fake_lb = torch.cat((fake, valid), 1)
+
+            ## GAN train
+            gan_optimizer_D.zero_grad()
+            real_loss = gan_loss(discriminator(inputs), real_lb)
+            fake_loss = gan_loss(discriminator(y.detach()), fake_lb)
+            # .detach()
+            d_loss = (real_loss + fake_loss) / 2
+            d_loss.backward()
+            D_losses.update(d_loss.item(), inputs.size(0))
+
+            gan_optimizer_D.step()
+
+        pbar.set_postfix(tr_loss='{:05.6f}'.format(losses.avg), d_loss='{:05.6f}'.format(D_losses.avg))
 
     return glob_step, lr_now, losses.avg, D_losses.avg
 
 # def test(test_loader, model, criterion, stat2d, stat_3d, procrustes=False):
+
+
 
 def test(test_loader, model, criterion, procrustes=False):
 

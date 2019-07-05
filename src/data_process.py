@@ -24,6 +24,19 @@ def unNormalizeData(normalized_data, data_mean, data_std, dimensions_to_use):
     return orig_data
 
 
+### Input unnormalization for Z Score
+# inputs_unnorm = data_process.unNormalizeData(inps.data.cpu().numpy(), stat_2d['mean'], stat_2d['std'], stat_2d['dim_use']) # 64, 64
+# unnorm size = 64, make zeros mtrx and just do unnorm, so (0 * stdMat) + meanMat => 64, 64 // junk values the other position except original 16 joints
+# dim_2d_use = stat_2d['dim_use']
+# select useful 32 joint using dim_2d-use  => 64, 32
+# inputs_use = inputs_unnorm[:, dim_2d_use]  # (64, 32)
+
+### Targets unnormalization
+# targets_unnorm = data_process.unNormalizeData(tars.data.cpu().numpy(), stat_3d['mean'], stat_3d['std'], stat_3d['dim_use']) # (64, 96)
+# dim_3d_use = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
+#                        23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
+#                        59, 75, 76, 77, 78, 79, 80, 81, 82, 83])
+# targets_use = targets_unnorm[:, dim_3d_use] # (51, )
 
 def unNormalize2dData(normalized_data, data_mean, data_std):
 
@@ -66,34 +79,30 @@ def unNormalize3dData(normalized_data, data_mean, data_std):
     return orig_data
 
 
-def input_norm(inputs):
+def input_norm(inputs, d_ref):
 
     head_idx = 9
     hip_idx = 0
     # r_hip_idx = 1
     # l_hip_idx = 4
-    c = 10
     input_set = []
     input_size = len(inputs)
     dist_set = []
-
-
 
     for idx in range(len(inputs)):
         # inputs = np.asarray(inputs)
         current_sample = inputs[idx]
         current_sample = current_sample.reshape(16,2)
         # central_point = (current_sample[r_hip_idx-1] + current_sample[l_hip_idx-1]) / 2
+        current_sample = current_sample - current_sample[hip_idx] # make root [0, 0]
         central_point = current_sample[hip_idx]
         head_point = current_sample[head_idx]
         dist = math.sqrt(np.sum((central_point - head_point) ** 2))
 
-        new_sample = current_sample / (c * dist)
+        new_sample = current_sample / (d_ref * dist)
         new_sample = np.reshape(new_sample, (1, 32))
         input_set.append(new_sample)
         dist_set.append(dist)
-
-
 
     input_set = np.asarray(input_set).reshape(input_size, 32)
     dist_set = np.asarray(dist_set)
@@ -125,7 +134,7 @@ def output_norm(outputs):
     for idx in range(len(outputs)):
         current_sample = outputs[idx]
         current_sample = current_sample.reshape(16, 3)
-        adjust_current_sample = current_sample + c
+        adjust_current_sample = current_sample
 
         # central_point = (current_sample[r_hip_idx - 1] + current_sample[l_hip_idx - 1]) / 2
         # central_point = torch.tensor([0, 0, c], dtype=torch.float32)
@@ -138,7 +147,7 @@ def output_norm(outputs):
         dist = math.sqrt(np.sum((central_point - head_point) ** 2))
 
 
-        new_sample = adjust_current_sample / dist
+        new_sample = (adjust_current_sample / dist) + c
         new_sample = np.reshape(new_sample, (1, 48))
         output_set.append(new_sample)
         dist_set.append(dist)
