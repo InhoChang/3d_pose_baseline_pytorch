@@ -67,7 +67,7 @@ def train(train_loader, model, criterion, optimizer, gan_optimizer_D, gan_loss, 
         ## GAN train
         gan_optimizer_D.zero_grad()
         real_loss = gan_loss(discriminator(inputs), real_lb)
-        fake_loss = gan_loss(discriminator(fake_joint), fake_lb)
+        fake_loss = gan_loss(discriminator(outputs), fake_lb)
         # .detach()
         d_loss = (real_loss + fake_loss) / 2
         d_loss.backward()
