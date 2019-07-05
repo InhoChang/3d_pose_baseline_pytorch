@@ -29,6 +29,7 @@ import src.log as log
 
 from src.model import weight_init, LinearModel_Drover
 from src.datasets.human36m import Human36M
+import src.spherical_coords as spherical_coords
 
 
 def main(opt):
@@ -195,8 +196,9 @@ def train(train_loader, model, criterion, optimizer, lr_init=None, lr_now=None, 
         R = torch.zeros(X.size(0), 3, 3)
         R_inv = torch.zeros(X.size(0), 3, 3)
         for k in range(X.size(0)):
-            Theta = math.acos(math.cos(el_angle[k]) * math.cos(az_angle[k]))
-            Phi = math.atan(math.tan(el_angle[k]) / math.sin(az_angle[k]))
+            [Theta, Phi] = spherical_coords.azel_to_thetaphi(az_angle[k], el_angle[k])
+            # Theta = math.acos(math.cos(el_angle[k]) * math.cos(az_angle[k]))
+            # Phi = math.atan(math.tan(el_angle[k]) / math.sin(az_angle[k]))
             # Theta = el_angle[k]
             # Phi = az_angle[k]
             Rx = torch.zeros([3, 3])
