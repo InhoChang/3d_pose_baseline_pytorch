@@ -176,7 +176,7 @@ class Discriminator(nn.Module):
         self.w2 = nn.Linear(self.linear_size, self.output_size)
         self.relu = nn.ReLU(inplace=True)
         self.dropout = nn.Dropout(self.p_dropout)
-        self.softmax = nn.Softmax()
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
 

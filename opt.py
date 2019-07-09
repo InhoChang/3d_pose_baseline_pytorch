@@ -69,8 +69,8 @@ class Options:
         self.parser.add_argument('--lr_gamma',       type=float,  default=0.96)
         self.parser.add_argument('--epochs',         type=int,    default=10)
         self.parser.add_argument('--dropout',        type=float,  default=0.5, help='dropout probability, 1.0 to make no dropout')
-        self.parser.add_argument('--train_batch',    type=int,    default=64)
-        self.parser.add_argument('--test_batch',     type=int,    default=64)
+        self.parser.add_argument('--train_batch',    type=int,    default=8192) #8192
+        self.parser.add_argument('--test_batch',     type=int,    default=8192)
         self.parser.add_argument('--job',            type=int,    default=8, help='# subprocesses to use for data loading')
         self.parser.add_argument('--no_max',         dest='max_norm', action='store_false', help='if use max_norm clip on grad')
         self.parser.add_argument('--max',            dest='max_norm', action='store_true', help='if use max_norm clip on grad')

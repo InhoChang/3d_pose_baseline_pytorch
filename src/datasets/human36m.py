@@ -7,22 +7,18 @@ import torch
 import numpy as np
 from torch.utils.data import Dataset
 
-
-TRAIN_SUBJECTS = [1, 5, 6, 7, 8]
-TEST_SUBJECTS = [9, 11]
-
-# dim_2d_use = np.array([ 0,  1,  2,  3,  4,  5,  6,  7, 12, 13, 14, 15, 16, 17, 24, 25, 26,
-#        27, 30, 31, 34, 35, 36, 37, 38, 39, 50, 51, 52, 53, 54, 55])
 #
-# dim_2d_use = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 18, 19, 20, 21, 22,
-#                                23, 24, 25, 26, 36, 37, 38, 39, 40, 41, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 58,
-#                                59, 75, 76, 77, 78, 79, 80, 81, 82, 83])
-
-
+# data_path = 'D:\\Human pose DB\\baseline_data\\data'
+#
+# train_3d = torch.load(os.path.join(data_path, 'train_3d.pth.tar'))  ## (48,)
+# train_2d = torch.load(os.path.join(data_path, 'train_2d.pth.tar'))  ## (32, )
+#
+# test_3d = torch.load(os.path.join(data_path, 'test_3d.pth.tar'))
+# test_2d = torch.load(os.path.join(data_path, 'test_2d.pth.tar'))
 
 
 class Human36M(Dataset):
-    def __init__(self, actions, data_path, set_num_samples, use_hg=True, is_train=True):
+    def __init__(self, actions, data_path, set_num_samples, train_2d, train_3d, test_2d, test_3d, use_hg=True, is_train=True):
         """
         :param actions: list of actions to use
         :param data_path: path to dataset
@@ -60,12 +56,10 @@ class Human36M(Dataset):
 
         if self.is_train:
             # load train data
-            self.train_3d = torch.load(os.path.join(data_path, 'train_3d.pth.tar')) ## (48,)
-            # for i in enumerate(self.train_3d.values()):
-            #     print(i[1][0])
-            #     break
-
-            self.train_2d = torch.load(os.path.join(data_path, train_2d_file)) ## (32, )
+            # self.train_3d = torch.load(os.path.join(data_path, 'train_3d.pth.tar')) ## (48,)
+            # self.train_2d = torch.load(os.path.join(data_path, train_2d_file)) ## (32, )
+            self.train_3d = train_3d
+            self.train_2d = train_2d
 
             # self.stat_2d = torch.load(os.path.join(data_path, stat_2d_file))
 
@@ -95,8 +89,8 @@ class Human36M(Dataset):
 
         else:
             # load test data
-            self.test_3d = torch.load(os.path.join(data_path, 'test_3d.pth.tar'))
-            self.test_2d = torch.load(os.path.join(data_path, test_2d_file))
+            self.test_3d =test_3d
+            self.test_2d =test_2d
 
             for k2d in self.test_2d.keys():
                 (sub, act, fname) = k2d
